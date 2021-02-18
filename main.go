@@ -13,11 +13,6 @@ type Hooks struct {
 	BeforeSendingEmail []func(e *Email)
 }
 
-type MainModule struct {
-	Vm    *goja.Runtime
-	hooks Hooks
-}
-
 type Email struct {
 	Subject string
 	Body    string
@@ -28,47 +23,36 @@ func (h Hooks) Init() {
 	h.BeforeSendingEmail = make([]func(e *Email), 0)
 }
 
-func (mm MainModule) Init() {
-	mm.hooks.Init()
-}
-
-func (mm MainModule) RegisterHook(hook string, fn goja.Value) {
-	fmt.Println("Register Hook start ")
-	//var cb func(e *Email)
-	//mm.Vm.ExportTo(fn, &cb)
-	mm.hooks.OnNewEmail = append(mm.hooks.OnNewEmail, &fn)
-	fmt.Printf("hooks len %d", len(mm.hooks.OnNewEmail))
-	//fmt.Println("OnNewEmail call in go ...")
-	//cb(&NewEmail{})
-
-}
-
-func (mm *MainModule) TriggerNewEmailEvent(email *Email) {
+func (h *Hooks) TriggerNewEmailEvent(email *Email, vm *goja.Runtime) {
 
 	fmt.Println("TriggerNewEmailEvent start ")
 
-	fmt.Printf("hooks len %d", len(mm.hooks.OnNewEmail))
+	fmt.Printf("hooks len %d\n", len(h.OnNewEmail))
 
-	for _, newEmail := range mm.hooks.OnNewEmail {
-		fmt.Printf("loop 1")
+	for _, newEmail := range h.OnNewEmail {
 		var cb func(e *Email)
-		mm.Vm.ExportTo(*newEmail, &cb)
-		fmt.Printf("Calling call back %v ", newEmail)
+		vm.ExportTo(*newEmail, &cb)
 		cb(email)
 	}
 }
 
 func main() {
+	var hooks Hooks
+	hooks.Init()
+
 	vm := goja.New()
 
 	new(require.Registry).Enable(vm)
 	console.Enable(vm)
 
-	mod := MainModule{Vm: vm}
+	obj := vm.NewObject()
 
-	mod.Init()
+	obj.Set("RegisterHook", func(hook string, fn goja.Value) {
+		fmt.Printf("RegisterHook called ")
+		hooks.OnNewEmail = append(hooks.OnNewEmail, &fn)
+	})
 
-	vm.Set("myemail", mod)
+	vm.Set("myemail", obj)
 
 	script := `
 		console.log("JS code started ")
@@ -77,7 +61,7 @@ func main() {
 		
 		function iGotEmail(newEmail)
 		{
-			console.log("New Email call back received")
+			console.log("New Email call back received. email=",newEmail.Subject, newEmail.Body)
 		}
 	`
 	prg, err := goja.Compile("", script, true)
@@ -93,5 +77,6 @@ func main() {
 		Body:    " Will be delivered in 1.3 micro seconds",
 	}
 
-	mod.TriggerNewEmailEvent(email)
+	fmt.Println(" Triggering event ")
+	hooks.TriggerNewEmailEvent(email, vm)
 }
